@@ -14,7 +14,7 @@ const port = process.env.PORT || 8080
 const users: any = {}
 
 interface User {
-    uuid: string
+    user_id: string
     username: string
     slug: string
     time: number
@@ -40,6 +40,7 @@ io.use(async (socket: any, next: NextFunction) => {
     socket.username = username
     
     const user: User = {
+        user_id: user_id,
         username: username,
         slug: '',
         time: 0,
@@ -49,7 +50,8 @@ io.use(async (socket: any, next: NextFunction) => {
         score: 0
     }
 
-    users[username] = user
+    users[user_id] = user
+    // users[username] = user
     next()
 })
 
@@ -110,13 +112,13 @@ io.use((socket: any, next: NextFunction) => {
             }        
         }
         questions = shuffleArray(questions)
-        users[socket.username]['questions'] = questions
+        users[socket.user_id]['questions'] = questions
         next()
     })()
 })
 
-const initializeTimer = (socket: Socket, username: string) => {
-    const user = users[username]
+const initializeTimer = (socket: Socket, user_id: string) => {
+    const user = users[user_id]
     let time = 0
     const interval = setInterval(() => {
         io.to(socket.id).emit('time', time.toFixed(2))
@@ -127,61 +129,62 @@ const initializeTimer = (socket: Socket, username: string) => {
 }
 
 io.on('connection', (socket: Socket) => {
-    socket.on('start', (username, slug, callback) => {
-        const index: number = users[username]['index']
-        const questions = users[username]['questions']
+    socket.on('start', (user_id, slug, callback) => {
+        const index: number = users[user_id]['index']
+        const questions = users[user_id]['questions']
         const answer: string = questions[index]['answer']
         const image: Array<string> = questions[index]['image']
         const options: Array<string> = questions[index]['options']
-        users[username]['slug'] = slug
+        users[user_id]['slug'] = slug
         callback({
             answer: answer,
             image: image,
             options: options
         })
-        initializeTimer(socket, username)
+        initializeTimer(socket, user_id)
     })
 
-    socket.on('question', (username, character, callback) => {
-        const index: number = users[username]['index']
-        const questions = users[username]['questions']
+    socket.on('question', (user_id, character, callback) => {
+        const index: number = users[user_id]['index']
+        const questions = users[user_id]['questions']
         const answer: string = questions[index]['answer']
 
-        if (answer === character) users[username]['score']++
+        if (answer === character) users[user_id]['score']++
         
         if (index >= questions.length - 1) {
             callback({ 
-                score: users[username]['score'],
-                time: users[username]['time'] 
+                score: users[user_id]['score'],
+                time: users[user_id]['time'] 
             })
 
-            clearInterval(users[username]['interval'])
+            clearInterval(users[user_id]['interval'])
 
-            const slug = users[username]['slug']
-            const score = users[username]['score']
-            const time = users[username]['time']
+            const slug = (users[user_id]['slug']).replaceAll('-', '_')
+            const username = users[user_id]['username']
+            const score = users[user_id]['score']
+            const time = users[user_id]['time']
 
             ;(async () => {
-                const anon = username.slice(0, 5)
+                const anon = user_id.slice(0, 5)
                 if (anon !== 'anon-') {
                     const { data } = await supabase
                         .from(slug)
-                        .select('username, score, time')
-                        .eq('username', username)
+                        .select('id, score, time')
+                        .eq('id', user_id)
 
                     if (data && ((data.length === 0) || (score > data[0].score) 
                         || (score >= data[0].score && time < data[0].time))) {
                             const { error } = await supabase
                                 .from(slug)
-                                .upsert({ username: username, score: score, time: time })
+                                .upsert({ id: user_id, username: username, score: score, time: time })
                             
-                            console.log(`submitted time for ${username}`)
-                            if (error) console.log (`submission error for ${username}`)
+                            console.log(`submitted time for ${user_id}`)
+                            if (error) console.log (`submission error for ${user_id}, ${JSON.stringify(error)}`)
 
                             const { data } = await supabase
                                 .from('profiles')
                                 .select('type_zero')
-                                .eq('username', username)
+                                .eq('id', user_id)
 
                             console.log(data)
 
@@ -194,22 +197,22 @@ io.on('connection', (socket: Socket) => {
                                 const { error } = await supabase
                                     .from('profiles')
                                     .update({ type_zero: type_zero })
-                                    .eq('username', username)
+                                    .eq('id', user_id)
 
-                                console.log(`updated profile for ${username}`)
-                                if (error) (`profile update error for ${username}`)
+                                console.log(`updated profile for ${user_id}`)
+                                if (error) (`profile update error for ${user_id}`)
                             }
                             
                     }
                 } 
-                delete users[username]
+                delete users[user_id]
                 socket.disconnect()             
             })()
         }
         else {
-            users[username]['index']++
-            const index: number = users[username]['index']
-            const questions = users[username]['questions']
+            users[user_id]['index']++
+            const index: number = users[user_id]['index']
+            const questions = users[user_id]['questions']
             const answer: string = questions[index]['answer']
             const image: Array<string> = questions[index]['image']
             const options: Array<string> = questions[index]['options']
@@ -222,7 +225,7 @@ io.on('connection', (socket: Socket) => {
     })
 
     socket.on('disconnect', () => {
-        delete users[(socket as any).username]
+        delete users[(socket as any).user_id]
         console.log(`${(socket as any).username} disconnected`)
     })
 })
