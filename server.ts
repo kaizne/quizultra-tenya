@@ -22,6 +22,7 @@ interface User {
     index: number
     questions: Array<object>
     score: number
+    season: number
 }
 
 const io = new Server(server, {
@@ -47,7 +48,8 @@ io.use(async (socket: any, next: NextFunction) => {
         interval: null,
         index: 0,
         questions: [],
-        score: 0
+        score: 0,
+        season: 1
     }
 
     users[user_id] = user
@@ -55,10 +57,10 @@ io.use(async (socket: any, next: NextFunction) => {
     next()
 })
 
-const findCharacterImage = (media: Array<MediaImage>, character: string) => {
+const findCharacterImage = (media: any, character: string) => {
     for (let image of media)
-        if (image.directus_files_id.title === character)
-            return image.directus_files_id.id
+        if (image.attributes.name.includes(character.toLowerCase()))
+            return image.attributes.url
     return ''
 }
 
@@ -74,11 +76,18 @@ const shuffleArray = (array: Array<any>) => {
 
 io.use((socket: any, next: NextFunction) => {
     const uuid = socket.handshake.query.uuid
+    const season = socket.handshake.query.season
     socket.uuid = uuid
+    socket.season = season
+    
     ;(async () => {
-        const directus = await getDirectusClient()
-        const quizzes = await directus.items('quizzes')
+        // const directus = await getDirectusClient()
+        // const quizzes = await directus.items('quizzes')
 
+        const response = await fetch(`https://quizultra-strapi-ae4s4.ondigitalocean.app/api/quizzes/${uuid}`)
+        const quiz = await response.json()
+
+        /*
         const query = await quizzes.readOne(uuid, {
             fields: [
                 'characters', 
@@ -86,32 +95,42 @@ io.use((socket: any, next: NextFunction) => {
                 'media.directus_files_id.title'
             ]
         })
+        */
 
-        const characters: object = query.characters
-        const media: Array<MediaImage> = query.media
+        // const characters: object = query.characters
+        // const media: Array<MediaImage> = query.media
+
+        
+
+        const characters: any = quiz['data']['attributes']['characters'][season]
+        const media = quiz['data']['attributes']['media']['data']
+
+        console.log(media)
 
         let questions = []
 
-        for (let group of Object.values(characters)) {
-            for (let character of group) {
-                const entry: any = {}
-                const options: Array<string> = []
-                options.push(character)
+        for (let character of characters) {
+            const entry: any = {}
+            const options: Array<string> = []
+            options.push(character)
 
-                for (let i = 0; i < 3; ++i) {
-                    let random = Math.floor(Math.random() * group.length)
-                    while (group[random] === character || options.includes(group[random]))
-                        random = Math.floor(Math.random() * group.length)    
-                    options.push(group[random])
-                }
+            for (let i = 0; i < 3; ++i) {
+                let random = Math.floor(Math.random() * characters.length)
+                while (characters[random] === character || options.includes(characters[random]))
+                    random = Math.floor(Math.random() * characters.length)    
+                options.push(characters[random])
+            }
 
-                entry.answer = character
-                entry.image = findCharacterImage(media, character)
-                entry.options = shuffleArray(options)
-                questions.push(entry)
-            }        
-        }
+            entry.answer = character
+            entry.image = findCharacterImage(media, character)
+            entry.options = shuffleArray(options)
+            questions.push(entry)
+        }        
+    
         questions = shuffleArray(questions)
+
+        console.log(questions)
+
         users[socket.user_id]['questions'] = questions
         next()
     })()
@@ -129,13 +148,14 @@ const initializeTimer = (socket: Socket, user_id: string) => {
 }
 
 io.on('connection', (socket: Socket) => {
-    socket.on('start', (user_id, slug, callback) => {
+    socket.on('start', (user_id, slug, season, callback) => {
         const index: number = users[user_id]['index']
         const questions = users[user_id]['questions']
         const answer: string = questions[index]['answer']
         const image: Array<string> = questions[index]['image']
         const options: Array<string> = questions[index]['options']
         users[user_id]['slug'] = slug
+        users[user_id]['season'] = season
         callback({
             answer: answer,
             image: image,
@@ -163,6 +183,7 @@ io.on('connection', (socket: Socket) => {
             const username = users[user_id]['username']
             const score = users[user_id]['score']
             const time = users[user_id]['time']
+            const season = users[user_id]['season']
 
             ;(async () => {
                 const anon = user_id.slice(0, 5)
@@ -176,7 +197,7 @@ io.on('connection', (socket: Socket) => {
                         || (score >= data[0].score && time < data[0].time))) {
                             const { error } = await supabase
                                 .from(slug)
-                                .upsert({ id: user_id, username: username, score: score, time: time })
+                                .upsert({ id: user_id, username: username, score: score, time: time, season: season })
                             
                             console.log(`submitted time for ${user_id}`)
                             if (error) console.log (`submission error for ${user_id}, ${JSON.stringify(error)}`)
@@ -190,7 +211,7 @@ io.on('connection', (socket: Socket) => {
 
                             if (data && data.length > 0) {
                                 let type_zero: any = data[0].type_zero
-                                type_zero[slug] = { score: score, time: time }
+                                type_zero[slug] = { score: score, time: time, season: season }
 
                                 const id = (socket as any).user_id
 
