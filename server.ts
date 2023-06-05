@@ -59,7 +59,7 @@ io.use(async (socket: any, next: NextFunction) => {
 
 const findCharacterImage = (media: any, character: string) => {
     for (let image of media)
-        if (image.attributes.name.includes(character.toLowerCase()))
+        if (image.attributes.name.includes(character.toLowerCase().replace(' ', '-')))
             return image.attributes.url
     return ''
 }
@@ -207,12 +207,17 @@ io.on('connection', (socket: Socket) => {
                                 .select('type_zero')
                                 .eq('id', user_id)
 
-                            console.log(data)
-
                             if (data && data.length > 0) {
                                 let type_zero: any = data[0].type_zero
-                                type_zero[slug] = { score: score, time: time, season: season }
-
+                                
+                                if (slug in type_zero) {
+                                    type_zero[slug][season] = { score: score, time: time }
+                                }
+                                else {
+                                    type_zero[slug] = {}
+                                    type_zero[slug][season] = { score: score, time: time }
+                                }
+                                
                                 const id = (socket as any).user_id
 
                                 const { error } = await supabase
