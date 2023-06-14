@@ -103,33 +103,35 @@ io.use((socket: any, next: NextFunction) => {
         
 
         const characters: any = quiz['data']['attributes']['characters'][season]
+
+        console.log(characters)
+
         const media = quiz['data']['attributes']['media']['data']
 
-        console.log(media)
+        let questions: any = []
 
-        let questions = []
-
-        for (let character of characters) {
-            const entry: any = {}
-            const options: Array<string> = []
-            options.push(character)
-
-            for (let i = 0; i < 3; ++i) {
-                let random = Math.floor(Math.random() * characters.length)
-                while (characters[random] === character || options.includes(characters[random]))
-                    random = Math.floor(Math.random() * characters.length)    
-                options.push(characters[random])
-            }
-
-            entry.answer = character
-            entry.image = findCharacterImage(media, character)
-            entry.options = shuffleArray(options)
-            questions.push(entry)
-        }        
+        if (characters) {
+            Object.keys(characters).forEach(key => {
+                const group: any = characters[key as keyof typeof characters]
+                group.forEach((character: any) => {
+                    const entry: any = {}
+                    const options: Array<string> = []
+                    options.push(character)
+                    for (let i = 0; i < 3; ++i) {
+                        let random = Math.floor(Math.random() * group.length)
+                        while (group[random] === character || options.includes(group[random]))
+                            random = Math.floor(Math.random() * group.length)
+                        options.push(group[random])
+                    }
+                    entry.answer = character
+                    entry.image = findCharacterImage(media, character)
+                    entry.options = shuffleArray(options)
+                    questions.push(entry)
+                })
+            })
+        }      
     
         questions = shuffleArray(questions)
-
-        console.log(questions)
 
         users[socket.user_id]['questions'] = questions
         next()
